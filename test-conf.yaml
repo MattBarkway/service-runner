@@ -1,0 +1,35 @@
+services:
+  multiservices:
+    path: ../kantan-multiservices
+    startup:
+      - ./dc.sh up redis db -d
+      - source .venv/bin/activate
+      - make run
+    pre-startup:
+      - ./dc.sh up redis db -d
+      - source .venv/bin/activate
+      - make migrate
+      - python ./manage.py clean_populate_db --no-input
+    teardown:
+      - ./dc.sh down
+  marketplace:
+    path: ../kantan-marketplace-api
+    startup:
+      - docker compose up -d
+      - source .venv/bin/activate
+      - make dev
+    teardown:
+      - docker compose down
+  gateway:
+    path: ../kantan-gateway
+    startup:
+      - yarn start
+  ops-portal:
+    path: ../kantan-ops-portal
+    startup:
+      - yarn dev
+  web:
+    path: ../kantan-web
+    startup:
+      - sleep 5
+      - yarn dev
