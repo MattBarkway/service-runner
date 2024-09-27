@@ -3,6 +3,7 @@ import pathlib
 import pty
 import subprocess
 import threading
+from wsgiref.simple_server import server_version
 
 import typer
 import yaml
@@ -10,7 +11,6 @@ from pydantic import BaseModel, Field
 from colorama import Fore, Style
 
 app = typer.Typer()
-LOG_DIR = pathlib.Path(__file__).parent.absolute() / "logs"
 COLORS = [Fore.RED, Fore.YELLOW, Fore.CYAN, Fore.BLUE, Fore.GREEN, Fore.MAGENTA]
 
 
@@ -76,6 +76,23 @@ def stream_output(master_fd: int, service_name: str, color: str) -> None:
     os.close(master_fd)
 
 
+def get_services_to_run(conf: TestConf, only: str, excpt: str) -> set[str]:
+    if only and excpt:
+        raise ValueError("--only and --except cannot be both specified")
+    original = set(conf.services.keys())
+    only_list = [i.strip() for i in (only.split(",") if only else [])]
+    except_list = [i.strip() for i in (excpt.split(",") if excpt else [])]
+    if only_list:
+        if invalid := [i for i in only_list if i not in original]:
+            raise ValueError(f"Invalid service names: {', '.join(invalid)}")
+        return set(only_list)
+    elif except_list:
+        if invalid := [i for i in except_list if i not in original]:
+            raise ValueError(f"Invalid service names: {', '.join(invalid)}")
+        return original - set(except_list)
+    return original
+
+
 @app.command()
 def run(
     only: str = typer.Option(
@@ -92,13 +109,11 @@ def run(
     ),
     include_pre_steps: bool = typer.Option(False, "--pre", "-p", help="Whether to run the `pre-startup` steps")
 ) -> None:
-    if only and except_:
-        raise ValueError("--only and --except cannot be both specified")
     with pathlib.Path("test-conf.yaml").open() as f:
         conf = TestConf.model_validate(yaml.safe_load(f))
-    services_to_run = (
-        set(conf.services.keys()) - (set(except_.split(",")) if except_ else set())
-    ).union(set(only.split(",")) if only else set())
+    services_to_run = get_services_to_run(conf, only, except_)
+
+
     print(f"\n Spinning up: {', '.join(services_to_run)}\n")
     processes, threads = [], []
     for idx, (name, details) in enumerate(conf.services.items()):

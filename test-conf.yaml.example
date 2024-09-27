@@ -1,0 +1,15 @@
+services:
+  my-service:
+    path: ../my-service
+    startup:
+      - docker compose up
+      - make run
+    pre-startup:
+      - make migrate
+      - make setup_db
+    teardown:
+      - docker compose down
+  another-service:
+    path: ../another-service
+    startup:
+      yarn dev
