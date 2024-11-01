@@ -3,7 +3,6 @@ import pathlib
 import pty
 import subprocess
 import threading
-from wsgiref.simple_server import server_version
 
 import typer
 import yaml
@@ -12,6 +11,7 @@ from colorama import Fore, Style
 
 app = typer.Typer()
 COLORS = [Fore.RED, Fore.YELLOW, Fore.CYAN, Fore.BLUE, Fore.GREEN, Fore.MAGENTA]
+MAX_LINE_SIZE = 2048
 
 
 class Service(BaseModel):
@@ -56,7 +56,7 @@ def wrap(color: str, msg: str) -> str:
 def stream_output(master_fd: int, service_name: str, color: str) -> None:
     while True:
         try:
-            if not (output := os.read(master_fd, 1024).decode("utf-8", errors='backslashreplace')):
+            if not (output := os.read(master_fd, MAX_LINE_SIZE).decode("utf-8", errors='backslashreplace')):
                 break
             print(
                 (
