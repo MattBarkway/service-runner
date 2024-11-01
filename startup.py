@@ -11,7 +11,7 @@ from colorama import Fore, Style
 
 app = typer.Typer()
 COLORS = [Fore.RED, Fore.YELLOW, Fore.CYAN, Fore.BLUE, Fore.GREEN, Fore.MAGENTA]
-MAX_LINE_SIZE = 2048
+BUFFER_SIZE = 1024
 
 
 class Service(BaseModel):
@@ -54,25 +54,34 @@ def wrap(color: str, msg: str) -> str:
 
 
 def stream_output(master_fd: int, service_name: str, color: str) -> None:
+    incomplete_line = ""
     while True:
         try:
-            if not (output := os.read(master_fd, MAX_LINE_SIZE).decode("utf-8", errors='backslashreplace')):
-                break
-            print(
-                (
-                    "\n".join(
-                        [
-                            f"{wrap(color, f'[{service_name}]'):<25} {line}"
-                            for line in output.splitlines()
-                        ]
-                    ).strip()
-                    + "\n"
-                ),
-                end="",
-                flush=True,
+            output = os.read(master_fd, BUFFER_SIZE).decode(
+                "utf-8", errors="backslashreplace"
             )
+            if not output:
+                break
+
+            incomplete_line += output
+            *complete_lines, incomplete_line = incomplete_line.splitlines(keepends=True)
+
+            for line in complete_lines:
+                print(
+                    f"{wrap(color, f'[{service_name}]'):<25} {line.strip()}",
+                    end="\n",
+                    flush=True,
+                )
         except (OSError, UnicodeError):
             break
+
+    if incomplete_line:
+        print(
+            f"{wrap(color, f'[{service_name}] [{len(incomplete_line)}]'):<45} {incomplete_line.strip()}",
+            end="\n",
+            flush=True,
+        )
+
     os.close(master_fd)
 
 
@@ -107,12 +116,13 @@ def run(
         "--except",
         help="Comma-separated list of services to exclude (e.g., -e service_2,service_4)",
     ),
-    include_pre_steps: bool = typer.Option(False, "--pre", "-p", help="Whether to run the `pre-startup` steps")
+    include_pre_steps: bool = typer.Option(
+        False, "--pre", "-p", help="Whether to run the `pre-startup` steps"
+    ),
 ) -> None:
     with pathlib.Path("test-conf.yaml").open() as f:
         conf = TestConf.model_validate(yaml.safe_load(f))
     services_to_run = get_services_to_run(conf, only, except_)
-
 
     print(f"\n Spinning up: {', '.join(services_to_run)}\n")
     processes, threads = [], []
